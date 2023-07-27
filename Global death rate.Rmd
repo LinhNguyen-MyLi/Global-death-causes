@@ -1,0 +1,149 @@
+---
+title: "Global death causes"
+author: "Linh"
+date: "2023-07-23"
+output: html_document
+---
+```{r}
+install.packages("tidyverse")
+install.packages("janitor")
+install.packages("here")
+install.packages("skimr")
+
+library(tidyr)
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(janitor)
+library(here)
+library(skimr)
+library(stringr)
+```
+
+```{r}
+death_cause <- read_csv("Cause of death.csv",show_col_types = FALSE)
+```
+
+## Inspect data
+
+```{r}
+skim_without_charts(death_cause)
+```
+
+```{r}
+glimpse(death_cause)
+```
+```{r}
+colnames(death_cause)
+```
+```{r}
+dim(death_cause)
+```
+```{r}
+str(death_cause)
+```
+
+
+## Cleaning process
+
+```{r}
+reduced_death_cause <- death_cause %>% select(-`Indicator Code`,-Disaggregation)
+reduced_death_cause
+class(reduced_death_cause)
+```
+
+```{r}
+filtered_death_cause <- reduced_death_cause %>%
+  filter(grepl("female.*age",`Indicator Name`, ignore.case = TRUE)|
+         grepl("male.*age",`Indicator Name`, ignore.case = TRUE))
+filtered_death_cause
+```
+
+```{r}
+num_unique_values <- n_distinct(filtered_death_cause$`Indicator Name`)
+print(num_unique_values)
+```
+```{r}
+# Count the occurrences of each unique cause of death
+cause_of_death_counts <- table(filtered_death_cause$`Indicator Name`)
+
+# Display the unique cause of death names and their counts
+unique_causes <- unique(filtered_death_cause$`Indicator Name`)
+for (cause in unique_causes) {
+  cat(cause, ": ", cause_of_death_counts[cause], "\n")
+}
+```
+# Look like Indicator Name has 02 structure string (24 unique string values), one with 5 parts and one with 4 parts that are separated by comma. We just need to extract 03 parts that have cause of death, age, sex (male/female)
+
+```{r}
+filtered_death_cause <- filtered_death_cause %>%
+  rename(indicator_name = `Indicator Name`, country_name = `Country Name`, country_code = `Country Code`, year = Year, death_rate = Value)
+```
+
+```{r}
+# Split data in Indicator Name column into age_bracket, gender, cause_name
+filtered_death_cause$ages_bracket <- str_extract(filtered_death_cause$indicator_name, "ages[\\s0-9+-]+")
+filtered_death_cause$gender <- str_extract(filtered_death_cause$indicator_name, "male|female")
+filtered_death_cause$cause_name <- str_extract(filtered_death_cause$indicator_name, "(?<=by ).*(?=, ages)")
+
+```
+
+```{r}
+num_missing <- sum(is.na(filtered_death_cause))
+print(num_missing)
+```
+```{r}
+# Final cleaned df
+cleaned_death_cause <- filtered_death_cause %>% select(-indicator_name)
+cleaned_death_cause
+```
+## Analyze process and visualization
+
+```{r}
+avg_by_cause_year <- cleaned_death_cause %>%
+  group_by(cause_name, year) %>%
+  summarize(avg_death_rate = mean(death_rate))
+
+ggplot(avg_by_cause_year, aes(x = year, y = avg_death_rate, color = cause_name)) +
+  geom_line() +
+  labs(title = "Trend of Death Rates by Year and Cause of death",
+       x = "Year",
+       y = "Average Death Rate",
+       color = "Cause of death") +
+  theme_minimal()
+
+
+
+```
+```{r}
+avg_by_country <- cleaned_death_cause %>%
+  filter(year == 2019) %>%
+  group_by(country_name) %>%
+  summarize(avg_death_rate1 = mean(death_rate)) %>%
+  arrange(desc(avg_death_rate1)) %>%
+  head(5)
+
+ggplot(avg_by_country, aes(x = country_name, y = avg_death_rate1)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Top 5 Countries with Highest Death Rates in 2019",
+       x = "Country",
+       y = "Average Death Rate") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+avg_by_age <- cleaned_death_cause %>%
+  filter(year == 2019) %>%
+  group_by(ages_bracket) %>%
+  summarize(avg_death_rate2 = mean(death_rate))
+
+
+ggplot(avg_by_age, aes(x = ages_bracket, y = avg_death_rate2)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Death Rate Distribution by Age Bracket in 2019",
+       x = "Age Bracket",
+       y = "Average Death Rate") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
